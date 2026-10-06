@@ -750,8 +750,8 @@
     mort.squash = 0.6;
     state.stats.caught++;
     addScore(5);
-    popup(g.x, mort.y - 130, '+$5 CAUGHT', '#ffe066', 9, 0.9);
-    if (mort.carry.length >= MAX_CARRY) popup(mort.x, mort.y - 150, 'HANDS FULL - JUMP!', '#ffb0b0', 8, 1.4);
+    popup(g.x, mort.y - 130, '+$5', '#ffe066', 9, 0.9);
+    if (mort.carry.length >= MAX_CARRY) popup(mort.x, mort.y - 150, 'HANDS FULL!', '#ffb0b0', 8, 1.4);
     sfx.caught();
     for (let i = 0; i < 8; i++) {
       const a = rand(0, TAU);
@@ -764,7 +764,7 @@
     state.boxCount += n;
     state.stats.delivered += n;
     addScore(10 * n);
-    popup(BOX_X, GROUND - 70, `+$${10 * n} DELIVERED`, '#7dffea', 9, 1.3);
+    popup(BOX_X, GROUND - 70, `+$${10 * n}`, '#7dffea', 9, 1.3);
     sfx.deposit(n);
     for (const hue of mort.carry) {
       for (let i = 0; i < 10; i++) spawn({ x: BOX_X + rand(-14, 14), y: GROUND - 40, vx: rand(-60, 60), vy: rand(-160, -60), life: 0.6, color: `hsl(${hue},100%,80%)`, size: 2, g: 300, type: 'spark' });
@@ -779,7 +779,7 @@
     b.spin = 0;
     state.stats.stuns++;
     addScore(25);
-    popup(b.x, b.y - 80, '+$25 STUNNED!', '#ff7ab8', 12, 1.4);
+    popup(b.x, b.y - 80, '+$25', '#ff7ab8', 12, 1.4);
     sfx.stun();
     state.shake = 6;
     state.hitstop = 0.08;
@@ -830,7 +830,7 @@
           g.dead = true;
           state.stats.saved++;
           addScore(10);
-          popup(TX, GROUND - 150 - (state.stats.saved % 3) * 14, '+$10 SAVED', '#7dffea', 9, 1);
+          popup(TX, GROUND - 150 - (state.stats.saved % 3) * 14, '+$10', '#7dffea', 9, 1);
           sfx.saved(state.stats.saved);
           for (let i = 0; i < 12; i++) {
             const a = rand(0, TAU);
