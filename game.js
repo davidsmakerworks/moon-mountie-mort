@@ -1778,8 +1778,8 @@
   }
 
   const STORY = [
-    "The year is 2112, and Canada has terraformed the moon into a winter wonderland! As a member of the Royal Canadian Moon Police in New Newfoundland, Mort's job is to protect Moon Canada from crime.",
-    'Unfortunately, American criminal Buford T. Bilgewater has managed to sneak past Moon Canadian customs by dressing up as a penguin. Now he intends to ruin the celebration of Moon Canada Day by destroying all of the delicate snow globes that are necessary for the festivities!',
+    "The year is 2112, and the moon has been terraformed into a winter wonderland! As a member of the Royal Canadian Moon Police in New Newfoundland, Mort's job is to protect Moon Canada from crime.",
+    'Unfortunately, American criminal Buford T. Bilgewater has managed to sneak past Moon Canadian immigration by dressing up as a penguin. Now he intends to ruin the celebration of Moon Canada Day by destroying all of the delicate snow globes that are necessary for the festivities!',
     "In MOON MOUNTIE MORT, you help Mort catch the snow globes thrown by Buford and drop them in the collection box until Moon Mechanic Milo can fix the teleporter and whisk them off to safety! Mort can only carry two globes at a time, so when his hands are full, jump to bump globes back into the sky! Earn $5\u00a0Canadian ($3\u00a0American) for each globe you catch or bump, $10\u00a0Canadian ($6\u00a0American) for each globe you deliver, and $25\u00a0Canadian ($15\u00a0American) if you can stun Buford by hitting him with one of the globes! Can you save Moon Canada Day and beat your high score?",
   ];
 
