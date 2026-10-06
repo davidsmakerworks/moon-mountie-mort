@@ -12,19 +12,28 @@
   // ---------------------------------------------------------------------------
   const W = 960, H = 540;
   const GROUND = 474;
-  const PLAY_L = 24, PLAY_R = 800;       // globes bounce off these walls
-  const TX = 885;                         // teleporter centre
+  const PLAY_L = 24, PLAY_R = 760;       // globes bounce off these walls (Mort can walk past PLAY_R)
+  const TX = 838;                         // teleporter centre
+  const BOX_X = 924;                      // globe collection box
+  const MAX_CARRY = 2;
+  const GAME_OVER_DELAY = 0.15;           // just long enough to see the final crash
   const GLOBE_GRAVITY = 230;              // low lunar gravity, nice and floaty
   const MORT_GRAVITY = 1150;
   const MORT_SPEED = 430;
   const JUMP_V = 470;
-  const BUMP_V = 400;
+  const BUMP_V = 300;                     // base pop speed when Mort's hat hits a globe
+  const BUMP_LIFT = 0.2;                  // share of Mort's upward jump speed added to the pop
   const HAT_TOP = 96;                     // hat height above Mort's feet
   const HAT_HALF = 30;
   const CAD_TO_USD = 0.6;
   const START_LIVES = 5;
   const MAX_LIVES = 9;
-  const EXTRA_LIFE_EVERY = 1000;
+  const EXTRA_LIFE_EVERY = 500;          // every $500 CAD: one maple leaf + one pair of moon shoes
+  const START_SHOES = 3;
+  const MAX_SHOES = 9;
+  const SHOES_TIME = 10;
+  const SHOES_BOOST = 2;
+  const SHOE_BTN = { x: 16, y: 84, w: 112, h: 34 }; // HUD button for touch / mouse
   const FONT = '"Press Start 2P", "Courier New", monospace';
   const HIGH_KEY = 'moonMountieMort.highScore';
 
@@ -401,16 +410,16 @@
 
     // bunting between two flag poles
     flag(c, 40, 300);
-    flag(c, 770, 300);
+    flag(c, 740, 300);
     c.strokeStyle = 'rgba(230,230,255,0.7)';
     c.lineWidth = 1.2;
     const sag = (t) => 304 + Math.sin(t * Math.PI) * 46;
     c.beginPath();
-    for (let i = 0; i <= 40; i++) { const t = i / 40; c.lineTo(lerp(41, 769, t), sag(t)); }
+    for (let i = 0; i <= 40; i++) { const t = i / 40; c.lineTo(lerp(41, 739, t), sag(t)); }
     c.stroke();
     for (let i = 1; i < 24; i++) {
       const t = i / 24, t2 = (i + 0.6) / 24;
-      const x1 = lerp(41, 769, t), y1 = sag(t), x2 = lerp(41, 769, t2), y2 = sag(t2);
+      const x1 = lerp(41, 739, t), y1 = sag(t), x2 = lerp(41, 739, t2), y2 = sag(t2);
       c.fillStyle = i % 2 ? 'rgba(227,36,43,0.9)' : 'rgba(255,255,255,0.9)';
       c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo((x1 + x2) / 2, (y1 + y2) / 2 + 14); c.closePath(); c.fill();
     }
@@ -557,6 +566,17 @@
       Sound.tone(180, 0.35, { type: 'triangle', vol: 0.25, to: 520 });
       for (let i = 0; i < 4; i++) Sound.tone(1400 - i * 180, 0.1, { type: 'square', vol: 0.06, delay: 0.12 + i * 0.08 });
     },
+    shoes() {
+      Sound.noise(0.35, { vol: 0.15, freq: 5000, type: 'highpass' });
+      [523, 784, 1047, 1568].forEach((f, i) => Sound.tone(f, 0.1, { type: 'square', vol: 0.07, delay: i * 0.05 }));
+    },
+    caught() {
+      Sound.tone(660, 0.08, { type: 'triangle', vol: 0.14 });
+      Sound.tone(990, 0.1, { type: 'triangle', vol: 0.1, delay: 0.06 });
+    },
+    deposit(n) {
+      [784, 988, 1175, 1568].slice(0, 2 + n).forEach((f, i) => Sound.tone(f, 0.12, { type: 'square', vol: 0.08, delay: i * 0.06 }));
+    },
     jump() { Sound.tone(300, 0.14, { type: 'square', vol: 0.06, to: 620 }); },
     laugh() {
       Sound.tone(300, 0.13, { type: 'sawtooth', vol: 0.09, to: 210 });
@@ -599,7 +619,7 @@
   const state = {
     mode: 'title', modeT: 0, t: 0,
     level: 1, score: 0, high: loadHigh(), newHigh: false,
-    lives: START_LIVES, nextLife: EXTRA_LIFE_EVERY,
+    lives: START_LIVES, nextLife: EXTRA_LIFE_EVERY, shoes: START_SHOES, shoesT: 0,
     globes: [], particles: [], popups: [],
     progress: 0, repairTime: 30,
     stats: { bumps: 0, stuns: 0, saved: 0 }, bonus: 0,
@@ -607,9 +627,9 @@
     paused: false, demo: false, bumpCombo: 0,
   };
 
-  const mort = { x: 300, y: GROUND, vx: 0, vy: 0, onGround: true, facing: 1, walkT: 0, squash: 0, armUp: 0 };
+  const mort = { x: 300, y: GROUND, vx: 0, vy: 0, onGround: true, facing: 1, walkT: 0, squash: 0, armUp: 0, carry: [] };
   const buford = { x: 420, y: -80, baseY: 112, vx: 0, targetX: 400, retarget: 0, throwT: 1, windup: 0, stun: 0, spin: 0, leaving: false, flap: 0, grin: 0 };
-  const milo = { x: 818, t: 0, lastHit: 0 };
+  const milo = { x: 772, t: 0, lastHit: 0 };
 
   const flakes = Array.from({ length: 80 }, () => ({ x: rand(0, W), y: rand(0, H), r: rand(0.7, 2.2), s: rand(12, 34), ph: rand(0, TAU) }));
 
@@ -623,7 +643,7 @@
 
   function startGame(demo = false) {
     Object.assign(state, {
-      score: 0, lives: START_LIVES, nextLife: EXTRA_LIFE_EVERY, level: 1, newHigh: false, demo, overT: 0,
+      score: 0, lives: START_LIVES, nextLife: EXTRA_LIFE_EVERY, shoes: START_SHOES, shoesT: 0, level: 1, newHigh: false, demo, overT: 0,
     });
     mort.x = 300; mort.vx = 0; mort.y = GROUND; mort.vy = 0;
     if (!demo) sfx.start();
@@ -634,7 +654,9 @@
     state.globes = [];
     state.progress = 0;
     state.repairTime = Math.min(25 + state.level * 5, 60);
-    state.stats = { bumps: 0, stuns: 0, saved: 0 };
+    state.stats = { caught: 0, bumps: 0, delivered: 0, stuns: 0, saved: 0 };
+    state.boxCount = 0;
+    mort.carry = [];
     state.bumpCombo = 0;
     Object.assign(buford, { x: rand(250, 550), y: -90, vx: 0, stun: 0, windup: 0, throwT: 0.8, leaving: false, retarget: 0 });
     buford.targetX = buford.x;
@@ -643,11 +665,13 @@
 
   function addScore(n) {
     state.score += n;
-    if (state.score >= state.nextLife) {
+    while (state.score >= state.nextLife) {
       state.nextLife += EXTRA_LIFE_EVERY;
-      if (state.lives < MAX_LIVES) {
-        state.lives++;
-        popup(mort.x, mort.y - 140, 'EXTRA LEAF!', '#7dffb0', 12, 1.6);
+      const leaf = state.lives < MAX_LIVES, shoes = state.shoes < MAX_SHOES;
+      if (leaf) state.lives++;
+      if (shoes) state.shoes++;
+      if (leaf || shoes) {
+        popup(mort.x, mort.y - 160, leaf && shoes ? 'EXTRA LEAF + MOON SHOES!' : leaf ? 'EXTRA LEAF!' : 'EXTRA MOON SHOES!', '#7dffb0', 10, 1.8);
         sfx.oneUp();
       }
     }
@@ -690,7 +714,7 @@
   function bumpGlobe(g) {
     const hy = mort.y - HAT_TOP;
     const off = clamp((g.x - mort.x) / HAT_HALF, -1, 1);
-    const lift = Math.max(0, -mort.vy) * 0.45;
+    const lift = Math.max(0, -mort.vy) * BUMP_LIFT;
     g.vy = -(BUMP_V + lift + rand(-12, 12));
     g.vx = off * 150 + mort.vx * 0.15;
     g.y = hy - g.r;
@@ -706,6 +730,46 @@
       const a = rand(Math.PI, TAU);
       spawn({ x: g.x, y: hy, vx: Math.cos(a) * rand(60, 160), vy: Math.sin(a) * rand(60, 160), life: rand(0.3, 0.6), color: `hsl(${g.hue},100%,80%)`, size: rand(1.5, 3), type: 'spark', drag: 3 });
     }
+  }
+
+  function mortSpeed() { return state.shoesT > 0 ? MORT_SPEED * SHOES_BOOST : MORT_SPEED; }
+
+  function activateShoes() {
+    if (!inGame() || state.shoesT > 0 || state.shoes <= 0) return;
+    state.shoes--;
+    state.shoesT = SHOES_TIME;
+    popup(mort.x, mort.y - 150, 'MOON SHOES!', '#9ff3ff', 12, 1.5);
+    popup(mort.x, mort.y - 132, '(definitely not hockey skates)', '#cfd8ff', 7, 1.8);
+    sfx.shoes();
+    for (let i = 0; i < 14; i++) spawn({ x: mort.x + rand(-16, 16), y: GROUND - 2, vx: rand(-120, 120), vy: rand(-140, -30), life: 0.6, color: '#dff6ff', size: rand(1.5, 3), g: 300, type: 'dot' });
+  }
+
+  function catchGlobe(g) {
+    g.dead = true;
+    mort.carry.push(g.hue);
+    mort.squash = 0.6;
+    state.stats.caught++;
+    addScore(5);
+    popup(g.x, mort.y - 130, '+$5 CAUGHT', '#ffe066', 9, 0.9);
+    if (mort.carry.length >= MAX_CARRY) popup(mort.x, mort.y - 150, 'HANDS FULL - JUMP!', '#ffb0b0', 8, 1.4);
+    sfx.caught();
+    for (let i = 0; i < 8; i++) {
+      const a = rand(0, TAU);
+      spawn({ x: g.x, y: g.y, vx: Math.cos(a) * 90, vy: Math.sin(a) * 90, life: 0.35, color: `hsl(${g.hue},100%,85%)`, size: 2, type: 'spark', drag: 4 });
+    }
+  }
+
+  function depositGlobes() {
+    const n = mort.carry.length;
+    state.boxCount += n;
+    state.stats.delivered += n;
+    addScore(10 * n);
+    popup(BOX_X, GROUND - 70, `+$${10 * n} DELIVERED`, '#7dffea', 9, 1.3);
+    sfx.deposit(n);
+    for (const hue of mort.carry) {
+      for (let i = 0; i < 10; i++) spawn({ x: BOX_X + rand(-14, 14), y: GROUND - 40, vx: rand(-60, 60), vy: rand(-160, -60), life: 0.6, color: `hsl(${hue},100%,80%)`, size: 2, g: 300, type: 'spark' });
+    }
+    mort.carry = [];
   }
 
   function stunBuford(g) {
@@ -731,7 +795,7 @@
     }
   }
 
-  function smashGlobe(g) {
+  function smashGlobe(g, atY = GROUND - 6) {
     g.dead = true;
     state.bumpCombo = 0;
     if (state.lives > 0) state.lives--;
@@ -739,17 +803,17 @@
     sfx.smash();
     popup(g.x, GROUND - 30, 'CRASH!', '#ff6b6b', 12, 1);
     for (let i = 0; i < 22; i++) {
-      spawn({ x: g.x, y: GROUND - 6, vx: rand(-200, 200), vy: rand(-320, -60), life: rand(0.8, 1.5), color: `hsla(${g.hue},90%,${rand(65, 90)}%,0.9)`, size: rand(3, 7), type: 'shard', g: 600, rot: rand(0, TAU), vr: rand(-12, 12) });
+      spawn({ x: g.x, y: atY, vx: rand(-200, 200), vy: rand(-320, -60), life: rand(0.8, 1.5), color: `hsla(${g.hue},90%,${rand(65, 90)}%,0.9)`, size: rand(3, 7), type: 'shard', g: 600, rot: rand(0, TAU), vr: rand(-12, 12) });
     }
     for (let i = 0; i < 10; i++) {
-      spawn({ x: g.x + rand(-8, 8), y: GROUND - 6, vx: rand(-80, 80), vy: rand(-180, -40), life: rand(0.6, 1.1), color: '#ffffff', size: rand(1.5, 3), g: 300, type: 'dot' });
+      spawn({ x: g.x + rand(-8, 8), y: atY, vx: rand(-80, 80), vy: rand(-180, -40), life: rand(0.6, 1.1), color: '#ffffff', size: rand(1.5, 3), g: 300, type: 'dot' });
     }
     if (state.mode === 'play' && !buford.leaving && buford.stun <= 0) {
       buford.grin = 1.2;
       popup(buford.x, buford.y - 84, 'HAW HAW!', '#ffd0a0', 10, 1.1);
       sfx.laugh();
     }
-    if (state.lives <= 0 && state.overT <= 0) state.overT = 1.6;
+    if (state.lives <= 0 && state.overT <= 0) state.overT = GAME_OVER_DELAY;
   }
 
   function updateGlobes(dt) {
@@ -792,13 +856,24 @@
       if (g.x < PLAY_L + g.r) { g.x = PLAY_L + g.r; g.vx = Math.abs(g.vx) * 0.9; sfx.wall(); }
       if (g.x > PLAY_R - g.r) { g.x = PLAY_R - g.r; g.vx = -Math.abs(g.vx) * 0.9; sfx.wall(); spawnBarrierSparks(g.y); }
 
+      // On the ground with a free hand, Mort catches anything that touches him above the knees
+      if (mort.onGround && mort.carry.length < MAX_CARRY && touchesMortAboveKnees(g)) {
+        catchGlobe(g);
+        continue;
+      }
+
       // Mort's hat
       const bottom = g.y + g.r;
       const relVy = g.vy - mort.vy;
       const sweep = Math.max(0, bottom - prevBottom) + Math.max(0, -mort.vy * dt) + 16;
       if (relVy > 0 && bottom >= hy && bottom - hy <= sweep && Math.abs(g.x - mort.x) < HAT_HALF + g.r * 0.9) {
-        bumpGlobe(g);
-        continue;
+        if (!mort.onGround) { bumpGlobe(g); continue; }
+        if (mort.carry.length < MAX_CARRY) { catchGlobe(g); continue; }
+        // hands full: the globe slips right past him
+        if (!g.slipped) {
+          g.slipped = true;
+          popup(mort.x, mort.y - 150, 'HANDS FULL!', '#ff9a9a', 10, 1.2);
+        }
       }
 
       // Buford
@@ -811,6 +886,21 @@
     state.globes = state.globes.filter((g) => !g.dead);
   }
 
+  // Mort's catchable outline (relative to his feet): body/arms/head from the knees up, plus the hat.
+  const MORT_CATCH_BOXES = [
+    { l: -18, r: 18, t: -84, b: -14 },
+    { l: -HAT_HALF, r: HAT_HALF, t: -HAT_TOP - 4, b: -80 },
+  ];
+
+  function touchesMortAboveKnees(g) {
+    for (const box of MORT_CATCH_BOXES) {
+      const nx = clamp(g.x, mort.x + box.l, mort.x + box.r);
+      const ny = clamp(g.y, mort.y + box.t, mort.y + box.b);
+      if (Math.hypot(g.x - nx, g.y - ny) < g.r) return true;
+    }
+    return false;
+  }
+
   function spawnBarrierSparks(y) {
     for (let i = 0; i < 6; i++) spawn({ x: PLAY_R, y, vx: rand(-90, -20), vy: rand(-60, 60), life: 0.35, color: '#8ff6ff', size: 2, type: 'spark', drag: 4 });
   }
@@ -818,7 +908,7 @@
   // ---------------------------------------------------------------------------
   // Characters
   // ---------------------------------------------------------------------------
-  function autopilotTarget() {
+  function autopilot() {
     // Predict where each globe will meet the hat, then chase the soonest one we can still reach.
     const hy = mort.y - HAT_TOP;
     const landings = [];
@@ -834,27 +924,35 @@
       if (u < 0) u += 2 * span;
       landings.push({ t, x: lo + (u > span ? 2 * span - u : u) });
     }
-    if (landings.length === 0) return buford.x;
     landings.sort((a, b) => a.t - b.t);
-    const reachable = landings.find((l) => Math.abs(l.x - mort.x) / MORT_SPEED < l.t - 0.05);
-    const best = (reachable || landings[0]).x;
-    const aim = Math.sign(buford.x - best) * 9;
-    return best - aim;
+    const reachable = landings.find((l) => Math.abs(l.x - mort.x) / mortSpeed() < l.t - 0.05);
+    const next = reachable || landings[0];
+    const carry = mort.carry.length;
+    if (!reachable && landings.length && mort.carry.length < MAX_CARRY) activateShoes();
+    const boxTrip = (Math.abs(BOX_X - mort.x) / mortSpeed()) * 2 + 0.6;
+    if (carry > 0 && (!next || next.t > boxTrip || (carry >= MAX_CARRY && next.t > 1.3))) return { x: BOX_X, jump: false };
+    if (!next) return { x: buford.x, jump: false };
+    const aim = Math.sign(buford.x - next.x) * 9;
+    const jump = carry >= MAX_CARRY && next.t < 0.24 && Math.abs(next.x - mort.x) < 30;
+    return { x: next.x - aim, jump };
   }
 
   function updateMort(dt) {
     let dir = 0;
+    const SPEED = mortSpeed();
     if (state.demo) {
-      const tx = autopilotTarget();
-      mort.vx += (clamp((tx - mort.x) * 8, -MORT_SPEED, MORT_SPEED) - mort.vx) * Math.min(1, dt * 14);
+      const ap = autopilot();
+      if (ap.jump) input.jumpBuf = 0.1;
+      const tx = ap.x;
+      mort.vx += (clamp((tx - mort.x) * 8, -SPEED, SPEED) - mort.vx) * Math.min(1, dt * 14);
     } else {
       if (input.left) dir -= 1;
       if (input.right) dir += 1;
       if (dir !== 0) {
         input.pointer = false;
-        mort.vx += (dir * MORT_SPEED - mort.vx) * Math.min(1, dt * 12);
+        mort.vx += (dir * SPEED - mort.vx) * Math.min(1, dt * 12);
       } else if (input.pointer) {
-        const desired = clamp((input.px - mort.x) * 8, -MORT_SPEED, MORT_SPEED);
+        const desired = clamp((input.px - mort.x) * 8, -SPEED, SPEED);
         mort.vx += (desired - mort.vx) * Math.min(1, dt * 14);
       } else {
         mort.vx *= 1 - Math.min(1, dt * 10);
@@ -862,7 +960,8 @@
     }
     mort.x += mort.vx * dt;
     if (mort.x < PLAY_L + 22) { mort.x = PLAY_L + 22; mort.vx = 0; }
-    if (mort.x > PLAY_R - 22) { mort.x = PLAY_R - 22; mort.vx = 0; }
+    if (mort.x > BOX_X + 10) { mort.x = BOX_X + 10; mort.vx = 0; }
+    if (mort.carry.length > 0 && Math.abs(mort.x - BOX_X) < 26) depositGlobes();
 
     if (input.jumpBuf > 0) input.jumpBuf -= dt;
     if (input.jumpBuf > 0 && mort.onGround) {
@@ -881,7 +980,15 @@
       mort.y = GROUND; mort.vy = 0; mort.onGround = true;
     }
     if (Math.abs(mort.vx) > 25) mort.facing = Math.sign(mort.vx);
-    mort.walkT += Math.abs(mort.vx) * dt * 0.06;
+    mort.walkT += Math.abs(mort.vx) * dt * (state.shoesT > 0 ? 0.02 : 0.06); // long skating strides
+    if (state.shoesT > 0) {
+      const was = state.shoesT;
+      state.shoesT = Math.max(0, state.shoesT - dt);
+      if (mort.onGround && Math.abs(mort.vx) > 300 && Math.random() < 0.8) {
+        spawn({ x: mort.x - Math.sign(mort.vx) * 12, y: GROUND - 2, vx: -mort.vx * rand(0.1, 0.25), vy: rand(-120, -40), life: rand(0.3, 0.5), color: '#e8f8ff', size: rand(1.5, 2.5), g: 400, type: 'dot' });
+      }
+      if (was > 0 && state.shoesT === 0) popup(mort.x, mort.y - 140, 'SHOES OFF', '#cfd8ff', 8, 1);
+    }
     mort.squash = Math.max(0, mort.squash - dt * 6);
     mort.armUp = Math.max(0, mort.armUp - dt);
   }
@@ -947,7 +1054,7 @@
     const phase = Math.sin(milo.t * 9);
     if (hitting && phase > 0.95 && milo.t - milo.lastHit > 0.4) {
       milo.lastHit = milo.t;
-      for (let i = 0; i < 7; i++) spawn({ x: 838, y: GROUND - 46, vx: rand(10, 120), vy: rand(-150, 10), life: rand(0.2, 0.45), color: i % 2 ? '#fff3a0' : '#ffb347', size: 1.8, g: 500, type: 'spark' });
+      for (let i = 0; i < 7; i++) spawn({ x: milo.x + 20, y: GROUND - 46, vx: rand(10, 120), vy: rand(-150, 10), life: rand(0.2, 0.45), color: i % 2 ? '#fff3a0' : '#ffb347', size: 1.8, g: 500, type: 'spark' });
     }
   }
 
@@ -1037,6 +1144,10 @@
     state.progress = 1;
     setMode('teleport');
     sfx.teleport();
+    for (const hue of mort.carry) {
+      state.globes.push({ x: mort.x, y: mort.y - 50, r: 15, vx: 0, vy: 0, hue, rot: 0, bumped: false, state: 'fly', age: 0 });
+    }
+    mort.carry = [];
     let i = 0;
     for (const g of state.globes) {
       g.state = 'beam';
@@ -1068,6 +1179,16 @@
     const moving = Math.min(1, Math.abs(m.vx) / 150);
     const walk = m.onGround ? Math.sin(m.walkT) * moving : 0.5;
 
+    const skates = state.shoesT > 0;
+    if (skates && Math.abs(m.vx) > 300) { // speed lines
+      c.strokeStyle = 'rgba(200,240,255,0.5)';
+      c.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const ly = -30 - i * 22, len = 20 + ((state.t * 300 + i * 17) % 18);
+        c.beginPath(); c.moveTo(-22, ly); c.lineTo(-22 - len, ly); c.stroke();
+      }
+    }
+
     // legs
     for (const s of [-1, 1]) {
       c.save();
@@ -1077,10 +1198,13 @@
       roundRect(c, -5, 0, 10, 21, 3); c.fill();
       c.fillStyle = '#f4c430';
       c.fillRect(-1, 1, 2, 18);
-      c.fillStyle = '#3a2414';
-      roundRect(c, -6, 17, 15, 8, 3); c.fill();
-      c.fillStyle = 'rgba(255,255,255,0.25)';
-      c.fillRect(-4, 18, 9, 2);
+      if (skates) drawSkate(c);
+      else {
+        c.fillStyle = '#3a2414';
+        roundRect(c, -6, 17, 15, 8, 3); c.fill();
+        c.fillStyle = 'rgba(255,255,255,0.25)';
+        c.fillRect(-4, 18, 9, 2);
+      }
       c.restore();
     }
 
@@ -1152,8 +1276,60 @@
     c.fillStyle = 'rgba(255,230,180,0.35)';
     ell(c, -6, -83.5, 18, 1.8); c.fill();
 
-    drawArm(10, armAngle, false);
+    m.carry.forEach((hue, i) => drawGlobeShape(c, 13 - i * 9, -44 - i * 13, 11, hue, i * 1.7));
+    drawArm(10, m.carry.length && m.onGround && m.armUp <= 0 ? -1.35 : armAngle, false);
     c.restore();
+  }
+
+  // Moon shoes. Any resemblance to hockey skates is purely coincidental.
+  function drawSkate(c) {
+    c.fillStyle = '#16161e';
+    c.beginPath();
+    c.moveTo(-6, 12); c.lineTo(4, 12); c.lineTo(5, 18);
+    c.quadraticCurveTo(12, 19, 12, 24); c.lineTo(-7, 24); c.lineTo(-7, 14);
+    c.closePath(); c.fill();
+    c.fillStyle = '#e3242b';
+    c.fillRect(-7, 21, 19, 2);
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 0.8;
+    for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(-2, 14 + i * 2.5); c.lineTo(4, 14 + i * 2.5); c.stroke(); }
+    c.fillStyle = '#cfd4e6';
+    c.fillRect(-4, 24, 2, 2.5);
+    c.fillRect(8, 24, 2, 2.5);
+    const bg = c.createLinearGradient(0, 26, 0, 29);
+    bg.addColorStop(0, '#ffffff');
+    bg.addColorStop(1, '#8a92b0');
+    c.fillStyle = bg;
+    c.beginPath();
+    c.moveTo(-7, 26.5); c.lineTo(11, 26.5); c.quadraticCurveTo(14, 26.5, 13, 28.5); c.lineTo(-6, 28.5);
+    c.closePath(); c.fill();
+  }
+
+  function drawShoeButton(c) {
+    const { x, y, w, h } = SHOE_BTN;
+    const active = state.shoesT > 0;
+    const usable = !active && state.shoes > 0;
+    c.save();
+    roundRect(c, x, y, w, h, 8);
+    c.fillStyle = active ? 'rgba(40,90,140,0.85)' : 'rgba(14,12,44,0.75)';
+    c.fill();
+    c.lineWidth = 2;
+    c.strokeStyle = usable ? `rgba(160,240,255,${0.6 + Math.sin(state.t * 4) * 0.25})` : 'rgba(160,190,255,0.35)';
+    c.stroke();
+    c.translate(x + 20, y - 5);
+    c.scale(1.1, 1.1);
+    drawSkate(c);
+    c.restore();
+    text(c, `x${state.shoes}`, x + 44, y + 13, 10, state.shoes > 0 ? '#ffffff' : '#7a7f9a', 'left');
+    text(c, 'S', x + w - 10, y + 13, 7, '#9ff3ff', 'right', null);
+    if (active) {
+      const k = state.shoesT / SHOES_TIME;
+      roundRect(c, x + 44, y + 22, (w - 52) * k, 5, 2.5);
+      c.fillStyle = state.shoesT < 2 && Math.floor(state.t * 8) % 2 ? '#ff7a7a' : '#7dffea';
+      c.fill();
+    } else {
+      text(c, 'MOON SHOES', x + 44, y + 25, 6, '#cfd8ff', 'left', null);
+    }
   }
 
   function drawBuford(c, b) {
@@ -1319,6 +1495,35 @@
     c.restore();
   }
 
+  function drawBox(c, t) {
+    const x = BOX_X, y = GROUND;
+    c.fillStyle = 'rgba(40,40,100,0.25)';
+    ell(c, x, y + 3, 26, 5); c.fill();
+    // globes peeking out of the top
+    const shown = Math.min(state.boxCount || 0, 4);
+    for (let i = 0; i < shown; i++) drawGlobeShape(c, x - 12 + i * 8, y - 40 + (i % 2) * 3, 9, GLOBE_HUES[i % GLOBE_HUES.length], i);
+    const g = c.createLinearGradient(x - 22, 0, x + 22, 0);
+    g.addColorStop(0, '#8a5a2b');
+    g.addColorStop(0.5, '#b07a40');
+    g.addColorStop(1, '#7a4a22');
+    c.fillStyle = g;
+    roundRect(c, x - 22, y - 38, 44, 38, 4); c.fill();
+    c.strokeStyle = '#4a2a14';
+    c.lineWidth = 2;
+    c.strokeRect(x - 20, y - 36, 40, 34);
+    c.beginPath(); c.moveTo(x - 20, y - 19); c.lineTo(x + 20, y - 19); c.stroke();
+    c.fillStyle = '#f4f8ff';
+    roundRect(c, x - 24, y - 42, 48, 6, 3); c.fill(); // snow on the rim
+    mapleLeaf(c, x, y - 18, 9, '#e3242b');
+    // bobbing arrow when Mort has globes to drop off
+    if (mort.carry.length > 0 && inGame()) {
+      const by = y - 66 + Math.sin(t * 6) * 5;
+      c.fillStyle = Math.floor(t * 4) % 2 ? '#7dffb0' : '#ffffff';
+      c.beginPath(); c.moveTo(x - 9, by); c.lineTo(x + 9, by); c.lineTo(x, by + 11); c.closePath(); c.fill();
+      text(c, 'DROP', x, by - 9, 7, '#7dffb0');
+    }
+  }
+
   function drawBarrier(c, t) {
     const g = c.createLinearGradient(PLAY_R - 8, 0, PLAY_R + 8, 0);
     g.addColorStop(0, 'rgba(120,240,255,0)');
@@ -1407,7 +1612,7 @@
 
     // repair progress panel (hidden behind the story on the title screen)
     if (state.mode === 'title') return;
-    const bx = 818, by = 222, bw = 134;
+    const bx = 806, by = 222, bw = 134;
     roundRect(c, bx, by, bw, 40, 8);
     c.fillStyle = 'rgba(14,12,44,0.82)';
     c.fill();
@@ -1529,6 +1734,7 @@
     text(c, `HI ${money(state.high)}`, W - 16, 22, 10, state.newHigh ? '#7dffb0' : '#cfd8ff', 'right');
     if (state.demo) text(c, 'DEMO - PRESS ANY KEY', PLAY_R / 2 + 12, 46, 9, Math.floor(state.t * 2) % 2 ? '#ffe066' : '#ffffff');
     if (Sound.muted) text(c, 'MUTED (M)', W - 16, 42, 7, '#ff9a9a', 'right');
+    drawShoeButton(c);
 
     // markers for globes that went above the top of the screen
     for (const g of state.globes) {
@@ -1560,26 +1766,27 @@
     c.shadowBlur = 0;
     c.restore();
 
-    panel(c, 116, 172, 728, 214);
-    let y = 192;
+    panel(c, 116, 164, 728, 224);
+    let y = 182;
     for (const para of STORY) {
       for (const line of wrapText(c, para, 692, 8)) {
         text(c, line, W / 2, y, 8, '#ffffff', 'center', null);
-        y += 14;
+        y += 13;
       }
-      y += 8;
+      y += 6;
     }
 
     if (Math.floor(t * 2.2) % 2 === 0) text(c, 'PRESS SPACE OR TAP TO START', W / 2, 408, 14, '#7dffb0');
-    text(c, 'ARROWS / A D: MOVE    SPACE / UP: JUMP    P: PAUSE    M: MUTE', W / 2, 436, 8, '#cfd8ff');
-    text(c, 'MOUSE OR TOUCH: SLIDE TO MOVE, CLICK OR TAP TO JUMP', W / 2, 452, 8, '#cfd8ff');
-    text(c, `HIGH SCORE  ${money(state.high)} CAD  (${money(usd(state.high))} USD)`, W / 2, 478, 9, '#ffb0b0');
+    text(c, 'ARROWS / A D: MOVE    SPACE / UP: JUMP    S / DOWN: MOON SHOES', W / 2, 432, 8, '#cfd8ff');
+    text(c, 'MOUSE OR TOUCH: SLIDE TO MOVE, TAP TO JUMP, TAP SKATE FOR SHOES', W / 2, 447, 8, '#cfd8ff');
+    text(c, 'P: PAUSE    M: MUTE', W / 2, 462, 8, '#cfd8ff');
+    text(c, `HIGH SCORE  ${money(state.high)} CAD  (${money(usd(state.high))} USD)`, W / 2, 486, 9, '#ffb0b0');
   }
 
   const STORY = [
     "The year is 2112, and Canada has terraformed the moon into a winter wonderland! As a member of the Royal Canadian Moon Police in New Newfoundland, Mort's job is to protect Moon Canada from crime.",
     'Unfortunately, American criminal Buford T. Bilgewater has managed to sneak past Moon Canadian customs by dressing up as a penguin. Now he intends to ruin the celebration of Moon Canada Day by destroying all of the delicate snow globes that are necessary for the festivities!',
-    'In MOON MOUNTIE MORT, you help Mort juggle the snow globes thrown by Buford until Moon Mechanic Milo can fix the teleporter and whisk them off to safety! Earn $5 Canadian ($3 American) each time you bump a globe back into the sky, and $25 Canadian ($15 American) if you can stun Buford by hitting him with one of the globes! Can you save Moon Canada Day and beat your high score?',
+    "In MOON MOUNTIE MORT, you help Mort catch the snow globes thrown by Buford and drop them in the collection box until Moon Mechanic Milo can fix the teleporter and whisk them off to safety! Mort can only carry two globes at a time, so when his hands are full, jump to bump globes back into the sky! Earn $5\u00a0Canadian ($3\u00a0American) for each globe you catch or bump, $10\u00a0Canadian ($6\u00a0American) for each globe you deliver, and $25\u00a0Canadian ($15\u00a0American) if you can stun Buford by hitting him with one of the globes! Can you save Moon Canada Day and beat your high score?",
   ];
 
   function wrapText(c, str, maxW, size) {
@@ -1601,7 +1808,7 @@
     panel(c, 220, 190, 520, 116);
     text(c, `LEVEL ${state.level}`, W / 2, 222, 26, '#ffe066');
     text(c, `MILO NEEDS ${Math.round(state.repairTime)} SECONDS`, W / 2, 258, 10, '#ffffff');
-    text(c, 'TO FIX THE TELEPORTER. KEEP THOSE GLOBES UP!', W / 2, 278, 9, '#cfd8ff');
+    text(c, 'TO FIX THE TELEPORTER. CATCH THOSE GLOBES!', W / 2, 278, 9, '#cfd8ff');
     c.globalAlpha = 1;
   }
 
@@ -1609,24 +1816,26 @@
     const t = state.modeT;
     c.fillStyle = `rgba(5,4,20,${Math.min(0.45, t)})`;
     c.fillRect(0, 0, W, H);
-    panel(c, 200, 120, 560, 290);
+    panel(c, 200, 110, 560, 316);
     text(c, 'GLOBES SAVED!', W / 2, 156, 24, '#7dffea');
     text(c, 'Happy Moon Canada Day, eh!', W / 2, 188, 9, '#ffffff', 'center', null);
     const rows = [
-      ['GLOBES TELEPORTED', `${state.stats.saved} x $10`],
+      ['GLOBES CAUGHT', `${state.stats.caught} x $5`],
       ['GLOBES BUMPED', `${state.stats.bumps} x $5`],
+      ['GLOBES DELIVERED', `${state.stats.delivered} x $10`],
+      ['GLOBES TELEPORTED', `${state.stats.saved} x $10`],
       ['BUFORD STUNS', `${state.stats.stuns} x $25`],
       ['LEVEL BONUS', money(state.bonus)],
     ];
     rows.forEach(([k, v], i) => {
-      if (t < 0.4 + i * 0.25) return;
-      text(c, k, 250, 226 + i * 28, 10, '#cfd8ff', 'left', null);
-      text(c, v, 710, 226 + i * 28, 10, '#ffe066', 'right', null);
+      if (t < 0.4 + i * 0.2) return;
+      text(c, k, 250, 218 + i * 22, 10, '#cfd8ff', 'left', null);
+      text(c, v, 710, 218 + i * 22, 10, '#ffe066', 'right', null);
     });
     if (t > 1.6) {
-      text(c, `TOTAL ${money(state.score)} CAD  (${money(usd(state.score))} USD)`, W / 2, 352, 11, '#ffffff');
+      text(c, `TOTAL ${money(state.score)} CAD  (${money(usd(state.score))} USD)`, W / 2, 366, 11, '#ffffff');
     }
-    if (t > 1.2 && !state.demo && Math.floor(t * 2.2) % 2 === 0) text(c, `PRESS SPACE FOR LEVEL ${state.level + 1}`, W / 2, 386, 10, '#7dffb0');
+    if (t > 1.2 && !state.demo && Math.floor(t * 2.2) % 2 === 0) text(c, `PRESS SPACE FOR LEVEL ${state.level + 1}`, W / 2, 398, 10, '#7dffb0');
     for (let i = 0; i < 2; i++) {
       if (Math.random() < 0.3) {
         spawn({ x: rand(220, 740), y: 110, vx: rand(-30, 30), vy: rand(40, 90), life: 2.5, color: '#ff2d3b', size: rand(3, 5), type: 'star', vr: rand(-3, 3) });
@@ -1660,6 +1869,7 @@
     const t = state.t;
     drawBarrier(c, t);
     drawTeleporter(c, t);
+    drawBox(c, t);
     drawMilo(c, milo.t);
 
     if (state.mode === 'title') {
@@ -1746,6 +1956,7 @@
     if (KEYS_LEFT.includes(e.code)) input.left = true;
     if (KEYS_RIGHT.includes(e.code)) input.right = true;
     if (KEYS_JUMP.includes(e.code) && !e.repeat) primaryAction();
+    if ((e.code === 'KeyS' || e.code === 'ArrowDown') && !e.repeat && !state.paused) { Sound.init(); activateShoes(); }
   });
   window.addEventListener('keyup', (e) => {
     if (KEYS_LEFT.includes(e.code)) input.left = false;
@@ -1765,8 +1976,16 @@
       input.pointer = true;
     }
   });
+  function onShoeButton(e) {
+    const r = canvas.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * W, y = ((e.clientY - r.top) / r.height) * H;
+    const b = SHOE_BTN, pad = 8;
+    return x >= b.x - pad && x <= b.x + b.w + pad && y >= b.y - pad && y <= b.y + b.h + pad;
+  }
+
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    if (inGame() && !state.demo && !state.paused && onShoeButton(e)) { Sound.init(); activateShoes(); return; }
     input.px = toGameX(e.clientX);
     if (inGame()) input.pointer = true;
     if (state.mode === 'title') state.modeT = Math.min(state.modeT, 1);
