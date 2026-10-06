@@ -700,7 +700,7 @@
     const g = {
       x: b.x + 18, y: b.y - 46, r: 15,
       vx: rand(-1, 1) * Math.min(110 + state.level * 10, 180), vy: rand(-170, -70),
-      hue: GLOBE_HUES[Math.floor(Math.random() * GLOBE_HUES.length)],
+      hue: b.heldHue,
       rot: rand(0, TAU), bumped: false, state: 'fly', age: 0,
     };
     // keep throws heading somewhere catchable
@@ -783,12 +783,6 @@
     sfx.stun();
     state.shake = 6;
     state.hitstop = 0.08;
-    const cy = b.y - 12;
-    let nx = g.x - b.x, ny = g.y - cy;
-    const d = Math.hypot(nx, ny) || 1;
-    nx /= d; ny /= d;
-    g.vx = nx * 200;
-    g.vy = Math.max(70, ny * 220);
     for (let i = 0; i < 16; i++) {
       const a = rand(0, TAU);
       spawn({ x: g.x, y: g.y, vx: Math.cos(a) * rand(80, 220), vy: Math.sin(a) * rand(80, 220), life: rand(0.4, 0.8), color: i % 2 ? '#ffe066' : '#ffffff', size: rand(3, 6), type: 'star', vr: rand(-8, 8), drag: 2 });
@@ -1035,7 +1029,7 @@
       if (b.windup <= 0) throwGlobe();
     } else {
       b.throwT -= dt;
-      if (b.throwT <= 0 && flyingCount() < maxActive()) b.windup = 0.45;
+      if (b.throwT <= 0 && flyingCount() < maxActive()) { b.windup = 0.45; b.heldHue = GLOBE_HUES[Math.floor(Math.random() * GLOBE_HUES.length)]; }
     }
   }
 
@@ -1391,7 +1385,7 @@
       c.rotate(-2.6);
       ell(c, 0, 12, 6, 15); c.fill();
       c.restore();
-      drawGlobeShape(c, 34, -50, 13, 200, state.t * 3, 1);
+      drawGlobeShape(c, 34, -50, 13, b.heldHue, state.t * 3, 1);
     } else {
       c.rotate(-0.5 - flap); ell(c, 0, 12, 6, 15); c.fill(); c.restore();
     }
